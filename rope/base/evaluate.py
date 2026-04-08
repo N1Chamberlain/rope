@@ -186,12 +186,18 @@ class StatementEvaluator(ast.RopeNodeVisitor):
             args = arguments.create_arguments(primary, pyobject, node, self.scope)
             return pyobject.get_returned_object(args)
 
+        # CHANGES MADE HERE TO SOLVE ISSUE #772
         if isinstance(pyobject, rope.base.pyobjects.AbstractClass):
             result = None
             if "__new__" in pyobject:
                 new_function = pyobject["__new__"].get_object()
                 result = _get_returned(new_function)
             if result is None or result == rope.base.pyobjects.get_unknown():
+                result = rope.base.pyobjects.PyObject(pyobject)
+            elif (
+                isinstance(result.get_type(), rope.base.builtins.BuiltinClass)
+                and isinstance(pyobject, pyobjectsdef.PyClass)
+            ):
                 result = rope.base.pyobjects.PyObject(pyobject)
             self.result = rope.base.pynames.UnboundName(pyobject=result)
             return

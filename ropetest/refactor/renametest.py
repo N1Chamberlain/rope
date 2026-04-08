@@ -1417,6 +1417,27 @@ class RenameRefactoringTest(RenameTestMixin, unittest.TestCase):
         with self.assertRaises(exceptions.RefactoringError, msg="Invalid refactoring target name. 'class' is a Python keyword."):
             self._local_rename("a_var = 20\n", 2, "class")
 
+    # ADDED FOR ISSUE #772
+    def test_rename_method_updates_calls_when_subclassing_builtin(self):
+        mod1 = testutils.create_module(self.project, "mod1")
+        mod2 = testutils.create_module(self.project, "mod2")
+        mod1.write(dedent("""\
+            class WordList(list):
+
+                def count(self, strg, case_sensitive=False, *args, **kwargs):
+                    return None
+        """))
+        mod2.write(dedent("""\
+            from mod1 import WordList
+            wl = WordList(['monty', 'python', 'Python', 'Monty'])
+            wl.count('monty')
+            wl.count('monty', case_sensitive=True)
+        """))
+        self._rename(mod1, mod1.read().index("def count") + len("def "), "start_index")
+        self.assertIn("def start_index", mod1.read())
+        self.assertIn("wl.start_index", mod2.read())
+        self.assertNotIn("wl.count", mod2.read())
+
 
 class RenameRefactoringWithSuperclassTest(RenameTestMixin, unittest.TestCase):
     ORIGINAL_CODE = dedent("""\
