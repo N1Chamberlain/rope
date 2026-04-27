@@ -2,132 +2,78 @@
 
 import pathlib
 import sys
-from collections import OrderedDict
-from typing import Generator, List, Optional, Tuple
+import pytest
 
-from rope.base.project import Project
+from unittest.mock import MagicMock
+from rope.contrib.autoimport.utils import get_package_source
+from rope.contrib.autoimport.defs import Source
 
-from .defs import ModuleCompiled, ModuleFile, ModuleInfo, Package, PackageType, Source
+def make_project(path: str):
+    """Return a minimal mock Project whose .address is the given path."""
+    project = MagicMock()
+    project.address = path
+    return project
 
-
-def get_package_tuple(
-    package_path: pathlib.Path, project: Optional[Project] = None
-) -> Optional[Package]:
+class TestVenvInsideProject:
     """
-    Get package name and type from a path.
-
-    Checks for common issues, such as not being a viable python module
-    Returns None if not a viable package.
+    Packages found under <project>/.venv/.../site-packages/ must be
+    classified as SITE_PACKAGE, not PROJECT.
     """
-    package_name = package_path.name
-    package_type: PackageType
-    if package_name.startswith(".") or package_name in ["__pycache__", "site-packages"]:
-        return None
-    if package_name.endswith((".egg-info", ".dist-info")):
-        return None
-    if package_path.is_file():
-        if package_name.endswith(".so"):
-            package_name = package_name.split(".")[0]
-            package_type = PackageType.COMPILED
-        elif package_name.endswith(".pyd"):
-            package_name = package_name.split(".")[0]
-            package_type = PackageType.COMPILED
-        elif package_name.endswith(".py"):
-            package_name = package_path.stem
-            package_type = PackageType.SINGLE_FILE
-        else:
-            return None
-    else:
-        package_type = PackageType.STANDARD
-    package_source: Source = get_package_source(package_path, project, package_name)
-    return Package(package_name, package_source, package_path, package_type)
+    def test_venv_site_packages_is_site_package(self, tmp_path):
+        project = make_project(str(tmp_path))
+        pkg_path = tmp_path / ".venv" / "lib" / "python3.11" / "site-packages" / "requests"
+        pkg_path.mkdir(parents=True)
+        result = get_package_source(pkg_path, project, "requests")
+        assert result == Source.SITE_PACKAGE, (
+            f"Expected SITE_PACKAGE for a .venv package, got {result}. "
+        )
 
+    def test_venv_named_env_site_packages_is_site_package(self, tmp_path):
+        """Works for venvs not named .venv (e.g. 'env', 'venv')."""
+        project = make_project(str(tmp_path))
+        pkg_path = tmp_path / "env" / "lib" / "python3.11" / "site-packages" / "flask"
+        pkg_path.mkdir(parents=True)
+        result = get_package_source(pkg_path, project, "flask")
+        assert result == Source.SITE_PACKAGE
 
-def get_package_source(
-    package: pathlib.Path, project: Optional[Project], name: str
-) -> Source:
-    """Detect the source of a given package. Rudimentary implementation."""
-    if name in sys.builtin_module_names:
-        return Source.BUILTIN
-    if project is not None and project.address in str(package):
-        return Source.PROJECT
-    if "site-packages" in package.parts:
-        return Source.SITE_PACKAGE
-    if sys.version_info < (3, 10, 0):
-        if str(package).startswith(sys.base_prefix):
-            return Source.STANDARD
-    else:
-        if name in sys.stdlib_module_names:
-            return Source.STANDARD
-    return Source.UNKNOWN
+    def test_venv_nested_package_is_site_package(self, tmp_path):
+        """A sub-package inside a venv dependency is also SITE_PACKAGE."""
+        project = make_project(str(tmp_path))
+        pkg_path = tmp_path / ".venv" / "lib" / "python3.11" / "site-packages" / "urllib3" / "util"
+        pkg_path.mkdir(parents=True)
+        result = get_package_source(pkg_path, project, "util")
+        assert result == Source.SITE_PACKAGE
 
+class TestNoRegression:
+    """
+    Make sure the fix does not break classification of real project files
+    or external site-packages.
+    """
+    def test_project_source_file_is_project(self, tmp_path):
+        """A module that lives directly in the project (not in site-packages) is PROJECT."""
+        project = make_project(str(tmp_path))
+        pkg_path = tmp_path / "myapp" / "models"
+        pkg_path.mkdir(parents=True)
+        result = get_package_source(pkg_path, project, "models")
+        assert result == Source.PROJECT
 
-def get_modname_from_path(
-    modpath: pathlib.Path, package_path: pathlib.Path, add_package_name: bool = True
-) -> str:
-    """Get module name from a path in respect to package."""
-    package_name: str = package_path.stem
-    rel_path_parts = modpath.relative_to(package_path).parts
-    modname = ""
-    if len(rel_path_parts) > 0:
-        for part in rel_path_parts[:-1]:
-            modname += part
-            modname += "."
-        if rel_path_parts[-1] == "__init__.py":
-            modname = modname[:-1]
-        else:
-            modname = modname + modpath.stem
-    if add_package_name:
-        modname = package_name if modname == "" else package_name + "." + modname
-    else:
-        assert modname != "."
-    return modname
+    def test_external_site_packages_is_site_package(self):
+        """Packages in a venv outside the project are still SITE_PACKAGE."""
+        project = make_project("/home/user/myproject")
+        pkg_path = pathlib.Path("/home/user/.virtualenvs/global/lib/python3.11/site-packages/numpy")
+        result = get_package_source(pkg_path, project, "numpy")
+        assert result == Source.SITE_PACKAGE
 
+    def test_builtin_module_is_builtin(self, tmp_path):
+        """Built-in modules (e.g. sys, os) are always BUILTIN regardless of path."""
+        project = make_project(str(tmp_path))
+        builtin_name = sys.builtin_module_names[0]
+        pkg_path = tmp_path / builtin_name
+        result = get_package_source(pkg_path, project, builtin_name)
+        assert result == Source.BUILTIN
 
-def sort_and_deduplicate(results: List[Tuple[str, int]]) -> List[str]:
-    """Sort and deduplicate a list of name, source entries."""
-    results = sorted(results, key=lambda y: y[-1])
-    results_sorted = [name for name, source in results]
-    return list(OrderedDict.fromkeys(results_sorted))
-
-
-def sort_and_deduplicate_tuple(
-    results: List[Tuple[str, str, int]],
-) -> List[Tuple[str, str]]:
-    """Sort and deduplicate a list of name, module, source entries."""
-    results = sorted(results, key=lambda y: y[-1])
-    results_sorted = [result[:-1] for result in results]
-    return list(OrderedDict.fromkeys(results_sorted))
-
-
-def should_parse(path: pathlib.Path, underlined: bool) -> bool:
-    if underlined:
-        return True
-    return all(not part.startswith("_") for part in path.parts)
-
-
-def get_files(
-    package: Package, underlined: bool = False
-) -> Generator[ModuleInfo, None, None]:
-    """Find all files to parse in a given path using __init__.py."""
-    if package.type in (PackageType.COMPILED, PackageType.BUILTIN):
-        if package.source in (Source.STANDARD, Source.BUILTIN):
-            yield ModuleCompiled(None, package.name, underlined, True)
-    elif package.type == PackageType.SINGLE_FILE:
-        assert package.path
-        assert package.path.suffix == ".py"
-        yield ModuleFile(package.path, package.path.stem, underlined, False)
-    else:
-        assert package.path
-        for file in package.path.glob("**/*.py"):
-            if file.name == "__init__.py":
-                yield ModuleFile(
-                    file,
-                    get_modname_from_path(file.parent, package.path),
-                    underlined,
-                    True,
-                )
-            elif should_parse(file, underlined):
-                yield ModuleFile(
-                    file, get_modname_from_path(file, package.path), underlined, False
-                )
+    def test_no_project_context_site_packages_is_site_package(self):
+        """Passing project=None still correctly identifies site-packages."""
+        pkg_path = pathlib.Path("/usr/local/lib/python3.11/site-packages/flask")
+        result = get_package_source(pkg_path, None, "flask")
+        assert result == Source.SITE_PACKAGE
