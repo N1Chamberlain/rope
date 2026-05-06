@@ -366,9 +366,9 @@ class MoveGlobal:
                 should_import = source is not None
                 # Removing out of date imports
                 pymodule = self.tools.new_pymodule(pymodule, source)
-                source = self.import_tools.organize_imports(
-                    pymodule, sort=False, import_filter=self._import_filter
-                )
+                source = self.tools.remove_old_imports(pymodule)
+                pymodule = self.tools.new_pymodule(pymodule, source)
+                source = self.import_tools.organize_imports(pymodule, sort=False)
                 # Adding new import
                 if should_import:
                     pymodule = self.tools.new_pymodule(pymodule, source)

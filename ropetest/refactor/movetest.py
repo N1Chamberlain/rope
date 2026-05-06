@@ -1458,3 +1458,23 @@ class MoveRefactoringTest(unittest.TestCase):
             """),
             self.destination_module.read(),
         )
+
+    def test_move_does_not_remove_still_used_imports(self):
+        self.mod1.write(dedent("""\
+            def func_to_move():
+                pass
+
+            def func_to_keep():
+                pass
+        """))
+        self.mod2.write("")
+        consumer = testutils.create_module(self.project, "consumer")
+        consumer.write(dedent("""\
+            from mod1 import func_to_move, func_to_keep
+
+            func_to_move()
+            func_to_keep()
+        """))
+        self._move(self.mod1, self.mod1.read().index("func_to_move"), self.mod2)
+        self.assertIn("func_to_keep", consumer.read())
+        self.assertIn("from mod1 import func_to_keep", consumer.read())
