@@ -912,17 +912,17 @@ class _Source:
         while i < len(segment):
             c = segment[i]
             if in_string:
-                if c == '\\':
+                if c == "\\":
                     i += 2  # skip escaped character
                     continue
-                if segment[i:i + len(quote_char)] == quote_char:
+                if segment[i : i + len(quote_char)] == quote_char:
                     in_string = False
                     i += len(quote_char)
                     continue
             else:
                 # Check for triple quotes first
                 for q in ('"""', "'''", '"', "'"):
-                    if segment[i:i + len(q)] == q:
+                    if segment[i : i + len(q)] == q:
                         in_string = True
                         quote_char = q
                         i += len(q)
