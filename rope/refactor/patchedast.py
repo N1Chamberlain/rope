@@ -914,8 +914,47 @@ class _Source:
         try:
             new_line_index = self.source.rindex("\n", start, offset)
         except ValueError:
-            return False
-        return comment_index < new_line_index
+            new_line_index = -1
+
+        if comment_index < new_line_index:
+            return True
+
+        # There's a # after the last newline — but is it inside a string?
+        line_start = new_line_index + 1
+        if self._is_inside_string(line_start, comment_index):
+            return True
+
+        return False
+
+    def _is_inside_string(self, line_start, index):
+        """Returns True if the character at `index` is inside a string literal"""
+        segment = self.source[line_start:index]
+        in_string = False
+        quote_char = None
+        i = 0
+        while i < len(segment):
+            c = segment[i]
+            if in_string:
+                if c == "\\":
+                    i += 2  # skip escaped character
+                    continue
+                if segment[i : i + len(quote_char)] == quote_char:
+                    in_string = False
+                    i += len(quote_char)
+                    continue
+            else:
+                # Check for triple quotes first
+                for q in ('"""', "'''", '"', "'"):
+                    if segment[i : i + len(q)] == q:
+                        in_string = True
+                        quote_char = q
+                        i += len(q)
+                        break
+                else:
+                    i += 1
+                continue
+            i += 1
+        return in_string
 
     def _skip_comment(self):
         self.offset = self.source.index("\n", self.offset + 1)

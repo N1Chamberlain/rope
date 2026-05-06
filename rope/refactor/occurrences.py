@@ -204,8 +204,14 @@ def same_pyname(expected, pyname):
         (pynames.ImportedModule, pynames.ImportedName),
     ):
         return False
+    expected_loc = expected.get_definition_location()
+    pyname_loc = pyname.get_definition_location()
+    # If both locations are unknown, we cannot reliably determine
+    # they refer to the same name — don't treat them as equal
+    if expected_loc == (None, None) and pyname_loc == (None, None):
+        return expected is pyname
     return (
-        expected.get_definition_location() == pyname.get_definition_location()
+        expected_loc == pyname_loc
         and expected.get_object() == pyname.get_object()
     )
 
