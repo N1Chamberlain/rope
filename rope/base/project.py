@@ -70,11 +70,41 @@ class _Project:
 
     def get_python_path_folders(self):
         result = []
-        for src in self.prefs.get("python_path", []) + sys.path:
+        for src in self.prefs.get("python_path", []) + self._get_venv_site_packages() + sys.path:
             with contextlib.suppress(exceptions.ResourceNotFoundError):
                 src_folder = get_no_project().get_resource(src)
                 result.append(src_folder)
         return result
+
+    def _get_venv_site_packages(self) -> list:
+        """Return site-packages folders from a virtual environment in the project root."""
+        import pathlib
+
+        project_root = pathlib.Path(getattr(self, "_address", ""))
+        if not project_root.is_dir():
+            return []
+
+        venv_names = [".venv", "venv", "env", ".env"]
+        for venv_name in venv_names:
+            venv_path = project_root / venv_name
+            pyvenv_cfg = venv_path / "pyvenv.cfg"
+            if not pyvenv_cfg.exists():
+                continue
+
+            # Try Windows layout first: venv/Lib/site-packages
+            win_site = venv_path / "Lib" / "site-packages"
+            if win_site.is_dir():
+                return [str(win_site)]
+
+            # Unix layout: venv/lib/pythonX.Y/site-packages
+            lib_path = venv_path / "lib"
+            if lib_path.is_dir():
+                for entry in sorted(lib_path.iterdir()):
+                    site = entry / "site-packages"
+                    if entry.name.startswith("python") and site.is_dir():
+                        return [str(site)]
+
+        return []
 
     # INFO: It was decided not to cache source folders, since:
     #  - Does not take much time when the root folder contains

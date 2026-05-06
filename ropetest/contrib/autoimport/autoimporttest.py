@@ -187,6 +187,34 @@ def test_setup_db_metadata_table_is_current(autoimport):
             patch("rope.base.versioning.calculate_version_hash", return_value="up-to-date-value"):
         autoimport._setup_db()
 
+def test_autoimport_finds_venv_packages(tmp_path):
+    """Regression test for https://github.com/python-rope/rope/issues/803.
+    Autoimport should find packages installed in the project's .venv."""
+    import os
+    from venv import EnvBuilder
+    from subprocess import check_call
+    from contextlib import closing
+
+    project_dir = tmp_path / "myproject"
+    project_dir.mkdir()
+    venv_path = project_dir / ".venv"
+    EnvBuilder(with_pip=True).create(venv_path)
+
+    if os.name == "nt":
+        python = venv_path / "Scripts" / "python.exe"
+    else:
+        python = venv_path / "bin" / "python"
+
+    check_call([str(python), "-m", "pip", "install", "requests", "--quiet"])
+
+    project = Project(str(project_dir))
+    try:
+        with closing(AutoImport(project, memory=True)) as ai:
+            ai.generate_modules_cache()
+            results = ai.search("requests", exact_match=True)
+            assert any(r[1] == "requests" for r in results)
+    finally:
+        project.close()
 
 class TestQueryUsesIndexes:
     def explain(self, autoimport, query):

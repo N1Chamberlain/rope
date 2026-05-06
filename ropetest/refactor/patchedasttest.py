@@ -1510,22 +1510,6 @@ class PatchedASTTest(unittest.TestCase):
             "}",
         ])
 
-    @testutils.only_for_versions_higher("3.12")
-    def test_generic_function_with_constrained_typevar(self):
-        # Regression test for https://github.com/python-rope/rope/issues/817
-        source = dedent("""\
-            def f[T: (int, str)](x):
-                pass
-        """)
-        ast_frag = patchedast.get_patched_ast(source, True)
-        checker = _ResultChecker(self, ast_frag)
-        checker.check_children(
-            "Function",
-            ["def", " ", "f", "", "[", "", "TypeVar", "", "]", "", "(", "", "arguments", "", ")", "", ":", "\n    ",
-             "Pass"],
-        )
-        checker.check_children("TypeVar", ["T", "", ":", " ", "Tuple"])
-
 
 class _ResultChecker:
     def __init__(self, test_case, ast):

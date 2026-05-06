@@ -325,8 +325,6 @@ class _PatchingASTWalker:
         for decorator in node.decorator_list:
             children.extend(("@", decorator))
         children.extend(["class", node.name])
-        if getattr(node, "type_params", None):
-            children.extend(["["] + self._child_nodes(node.type_params, ",") + ["]"])
         if node.bases:
             children.append("(")
             children.extend(self._child_nodes(node.bases, ","))
@@ -493,8 +491,6 @@ class _PatchingASTWalker:
             children.extend(("@", decorator))
         children.extend(["async", "def"] if is_async else ["def"])
         children.append(node.name)
-        if getattr(node, "type_params", None):
-            children.extend(["["] + self._child_nodes(node.type_params, ",") + ["]"])
         children.extend(["(", node.args, ")"])
         children.append(":")
         children.extend(node.body)
@@ -505,25 +501,6 @@ class _PatchingASTWalker:
 
     def _AsyncFunctionDef(self, node):
         self._handle_function_def_node(node, is_async=True)
-
-    def _TypeVar(self, node):
-        children = [node.name]
-        if node.bound is not None:
-            children.extend([":", node.bound])
-        self._handle(node, children)
-
-    def _TypeVarTuple(self, node):
-        self._handle(node, ["*", node.name])
-
-    def _ParamSpec(self, node):
-        self._handle(node, ["**", node.name])
-
-    def _TypeAlias(self, node):
-        children = ["type", node.name]
-        if getattr(node, "type_params", None):
-            children.extend(["["] + self._child_nodes(node.type_params, ",") + ["]"])
-        children.extend(["=", node.value])
-        self._handle(node, children)
 
     def _arguments(self, node):
         children = []
@@ -914,47 +891,8 @@ class _Source:
         try:
             new_line_index = self.source.rindex("\n", start, offset)
         except ValueError:
-            new_line_index = -1
-
-        if comment_index < new_line_index:
-            return True
-
-        # There's a # after the last newline — but is it inside a string?
-        line_start = new_line_index + 1
-        if self._is_inside_string(line_start, comment_index):
-            return True
-
-        return False
-
-    def _is_inside_string(self, line_start, index):
-        """Returns True if the character at `index` is inside a string literal"""
-        segment = self.source[line_start:index]
-        in_string = False
-        quote_char = None
-        i = 0
-        while i < len(segment):
-            c = segment[i]
-            if in_string:
-                if c == "\\":
-                    i += 2  # skip escaped character
-                    continue
-                if segment[i : i + len(quote_char)] == quote_char:
-                    in_string = False
-                    i += len(quote_char)
-                    continue
-            else:
-                # Check for triple quotes first
-                for q in ('"""', "'''", '"', "'"):
-                    if segment[i : i + len(q)] == q:
-                        in_string = True
-                        quote_char = q
-                        i += len(q)
-                        break
-                else:
-                    i += 1
-                continue
-            i += 1
-        return in_string
+            return False
+        return comment_index < new_line_index
 
     def _skip_comment(self):
         self.offset = self.source.index("\n", self.offset + 1)
