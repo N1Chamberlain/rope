@@ -34,6 +34,32 @@ class RenameTestMixin:
 
 
 class RenameRefactoringTest(RenameTestMixin, unittest.TestCase):
+    def test_rename_does_not_modify_source_module_of_imported_name(self):
+        app = testutils.create_module(self.project, "app")
+        testutils.create_module(self.project, "compat")
+        self.project.get_resource("compat.py").write(dedent("""\
+            import sys
+            PY2 = (sys.version_info[0] == 2)
+            if PY2:
+                from itertools import izip
+            else:
+                izip = zip
+            __all__ = ["izip"]
+        """))
+        code = dedent("""\
+            from compat import izip
+
+            def pairs(seq1, seq2):
+                return list(izip(seq1, seq2))
+        """)
+        app.write(code)
+        offset = code.index("izip")
+        renamer = Rename(self.project, app, offset)
+        result = renamer.get_changes("my_zip").get_description()
+        self.assertIn("from compat import my_zip", result)
+        self.assertNotIn("izip = my_zip", result)
+        self.assertNotIn("from itertools import imap, my_zip", result)
+
     def test_local_variable_but_not_parameter(self):
         code = dedent("""\
             a = 10
