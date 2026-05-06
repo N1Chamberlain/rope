@@ -8,6 +8,21 @@ from ropetest import testutils
 
 
 class ExtractMethodTest(unittest.TestCase):
+    def test_extract_function_with_hash_in_fstring(self):
+        code = dedent("""\
+            def main():
+                h = 1
+                g = f"#{h}"
+        """)
+        start = code.index('f"')
+        end = code.index('"', start + 2) + 1
+        resource = testutils.create_module(self.project, "mymod")
+        resource.write(code)
+        extractor = extract.ExtractMethod(self.project, resource, start, end)
+        result = extractor.get_changes("extracted").get_description()
+        self.assertIn("def extracted", result)
+        self.assertIn('f"#{h}"', result)
+
     def setUp(self):
         super().setUp()
         self.project = testutils.sample_project()
@@ -3513,3 +3528,18 @@ class ExtractMethodTest(unittest.TestCase):
                 print(x)
         """)
         self.assertEqual(expected, refactored)
+
+        def test_extract_function_with_hash_in_fstring(self):
+            code = dedent("""\
+                def main():
+                    h = 1
+                    g = f"#{h}"
+            """)
+            start = code.index('f"')
+            end = code.index('"\n', start) + 1
+            resource = testutils.create_module(self.project, "mymod")
+            resource.write(code)
+            extractor = extract.ExtractMethod(self.project, resource, start, end)
+            result = extractor.get_changes("extracted").get_changed_contents()[0][1]
+            self.assertIn("def extracted", result)
+            self.assertIn('f"#{h}"', result)

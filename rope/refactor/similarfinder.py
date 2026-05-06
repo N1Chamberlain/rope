@@ -115,13 +115,19 @@ class RawSimilarFinder:
     def _get_matched_asts(self, code):
         if code not in self._matched_asts:
             wanted = self._create_pattern(code)
-            matches = _ASTMatcher(self.ast, wanted, self.does_match).find_matches()
-            self._matched_asts[code] = matches
+            if not wanted and isinstance(wanted, list):
+                self._matched_asts[code] = []
+            else:
+                matches = _ASTMatcher(self.ast, wanted, self.does_match).find_matches()
+                self._matched_asts[code] = matches
         return self._matched_asts[code]
 
     def _create_pattern(self, expression):
         expression = self._replace_wildcards(expression)
-        node = ast.parse(expression)
+        try:
+            node = ast.parse(expression)
+        except SyntaxError:
+            return []
         # Getting Module.Stmt.nodes
         nodes = node.body
         if len(nodes) == 1 and isinstance(nodes[0], ast.Expr):
